@@ -16,9 +16,13 @@
 #define UART_CONFIG   SERIAL_8E1
 
 // ─── uart_forward: write raw bytes downstream via Serial1 ────────────────────
+SemaphoreHandle_t g_serial1_mutex = nullptr;
+
 void uart_forward(const uint8_t *data, size_t len)
 {
+    if (g_serial1_mutex) xSemaphoreTake(g_serial1_mutex, portMAX_DELAY);
     Serial1.write(data, len);
+    if (g_serial1_mutex) xSemaphoreGive(g_serial1_mutex);
 }
 
 // ─── UART chain task ──────────────────────────────────────────────────────────
@@ -81,6 +85,7 @@ void uart_task_start()
     pinMode(PIN_DIAG, OUTPUT);
     digitalWrite(PIN_DIAG, LOW);
 
+    g_serial1_mutex = xSemaphoreCreateMutex();
     xTaskCreate(uartTask, "uart", 4096, nullptr, 2, nullptr);
 }
 

@@ -73,6 +73,29 @@ static void apply_speed_accel()
     s_stepper->setAcceleration(s_status.accelHz ? s_status.accelHz : 100);
 }
 
+// ─── TMC2209 runtime reconfigure ─────────────────────────────────────────────
+// Borrows Serial1 under g_serial1_mutex, writes all TMC config registers,
+// then restores Serial1 to the chain UART OUT pins.
+static void tmc_reconfigure()
+{
+    if (g_serial1_mutex) xSemaphoreTake(g_serial1_mutex, portMAX_DELAY);
+    Serial1.end();
+    Serial1.begin(115200, SERIAL_8N1, /*rx=*/-1, /*tx=*/TMC_PIN_TX);
+    {
+        TMC2209Stepper tmc(&Serial1, TMC_R_SENSE, /*addr=*/0);
+        tmc.begin();
+        tmc.pdn_disable(true);
+        tmc.I_scale_analog(false);
+        tmc.rms_current(s_status.currentMA);
+        tmc.microsteps(s_status.microsteps);
+        tmc.en_spreadCycle(false);
+        tmc.shaft(s_status.dirFlipped);
+    }
+    Serial1.end();
+    Serial1.begin(115200, SERIAL_8E1, PIN_UART_OUT_RX, PIN_UART_OUT_TX);
+    if (g_serial1_mutex) xSemaphoreGive(g_serial1_mutex);
+}
+
 // ─── Monitor / homing task ────────────────────────────────────────────────────
 static void motorTask(void *)
 {
@@ -87,12 +110,15 @@ static void motorTask(void *)
         {
             s_homing_req = false;
             s_status.state = MotorState::MS_HOMING;
+            // Reconfigure DIAG as input to read the end switch.
+            // uart_task uses it as a blink output; harmless during homing.
+            pinMode(PIN_DIAG, INPUT_PULLUP);
             s_stepper->setSpeedInHz(200);
             s_stepper->setAcceleration(500);
             s_stepper->moveTo(-2000000L); // large negative target
             while (s_stepper->isRunning())
             {
-                if (digitalRead(PIN_DIAG) == LOW)
+                if (digitalRead(PIN_DIAG) == LOW)  // end switch triggered (active LOW)
                 {
                     s_stepper->forceStopAndNewPosition(0);
                     s_status.position = 0;
@@ -101,6 +127,9 @@ static void motorTask(void *)
                 }
                 vTaskDelay(pdMS_TO_TICKS(1));
             }
+            // Restore DIAG as output for uart_task blink indicator
+            pinMode(PIN_DIAG, OUTPUT);
+            digitalWrite(PIN_DIAG, LOW);
             apply_speed_accel();
             s_status.state = MotorState::MS_IDLE;
             Serial.println("[motor] homing done");
@@ -250,6 +279,7 @@ void motor_flipDir(uint8_t id)
         return;
     s_status.dirFlipped = !s_status.dirFlipped;
     s_stepper->setDirectionPin(PIN_DIR, !s_status.dirFlipped);
+    tmc_reconfigure();
     motor_prefs_save();
 }
 
@@ -258,7 +288,7 @@ void motor_setStepSize(uint8_t id, uint16_t ustep)
     if (!id_match(id))
         return;
     s_status.microsteps = ustep;
-    // microstep config is hardware (MS1/MS2 pins) in standalone mode
+    tmc_reconfigure();
     motor_prefs_save();
 }
 
@@ -267,7 +297,7 @@ void motor_setCurrent(uint8_t id, uint16_t mA)
     if (!id_match(id))
         return;
     s_status.currentMA = mA;
-    // current set by VREF hardware in standalone mode
+    tmc_reconfigure();
     motor_prefs_save();
 }
 
