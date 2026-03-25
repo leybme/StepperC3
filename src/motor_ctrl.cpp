@@ -1,238 +1,320 @@
 #include "motor_ctrl.h"
 #include "uart_task.h"
+#include "board_prefs.h"
 #include <Arduino.h>
 #include <board.h>
+#include <Preferences.h>
+#include <FastAccelStepper.h>
+#include <TMCStepper.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <freertos/queue.h>
 #include <esp32-hal.h>
-#include <cstdlib>
 
 // TMC2209 runs in standalone STEP/DIR mode — no UART used.
 
-// ─── Internal command queue ───────────────────────────────────────────────────
-enum class CmdType : uint8_t { MOVE_ABS, MOVE_REL, GO_HOME, FIND_HOME, STOP };
-struct MotorQueueCmd { CmdType type; int32_t arg; };
-static QueueHandle_t s_queue;
+// ─── FastAccelStepper engine ──────────────────────────────────────────────────
+static FastAccelStepperEngine s_engine;
+static FastAccelStepper *s_stepper = nullptr;
 
 // ─── Per-node state ───────────────────────────────────────────────────────────
 static MotorStatus s_status = {
-    .id          = 0,
-    .position    = 0,
-    .target      = 0,
-    .state       = MotorState::MS_IDLE,
-    .enabled     = true,
-    .dirFlipped  = false,
-    .microsteps  = 16,
-    .currentMA   = 600,
-    .speedUs     = 500,
-    .accelSteps  = 0,
+    .id = 0,
+    .position = 0,
+    .target = 0,
+    .state = MotorState::MS_IDLE,
+    .enabled = true,
+    .dirFlipped = false,
+    .microsteps = 16,
+    .currentMA = 600,
+    .speedHz = 1000,
+    .accelHz = 1000,
 };
 
+static volatile bool s_homing_req = false;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-static inline bool id_match(uint8_t id) { return id == s_status.id; }
+static inline bool id_match(uint8_t id) { return id == g_board_id; }
 
-// Issue one step pulse, updating position counter.
-// dir: true = forward, false = reverse (before polarity flip).
-static void do_step(bool dir) {
-    bool physDir = dir ^ s_status.dirFlipped;
-    digitalWrite(PIN_DIR, physDir ? HIGH : LOW);
-    digitalWrite(PIN_STEP, HIGH);
-    ets_delay_us(s_status.speedUs);
-    digitalWrite(PIN_STEP, LOW);
-    ets_delay_us(s_status.speedUs);
-    s_status.position += (dir ? 1 : -1);
+// ─── NVS persistence ─────────────────────────────────────────────────────────
+// Only configuration fields are persisted; position/target/state reset each boot.
+static const char *MOTOR_NS = "motor";
+
+static void motor_prefs_save()
+{
+    Preferences prefs;
+    prefs.begin(MOTOR_NS, false);
+    prefs.putBool("dirFlip", s_status.dirFlipped);
+    prefs.putUShort("microsteps", s_status.microsteps);
+    prefs.putUShort("currentMA", s_status.currentMA);
+    prefs.putULong("speedHz", s_status.speedHz);
+    prefs.putULong("accelHz", s_status.accelHz);
+    prefs.putBool("enabled", s_status.enabled);
+    prefs.end();
 }
 
-// Execute N steps with optional trapezoidal ramp.
-static void run_steps(int32_t steps) {
-    if (steps == 0) return;
-    bool    dir   = (steps > 0);
-    int32_t count = abs(steps);
-
-    // Acceleration ramp: ramp up for first accelSteps, cruise, ramp down.
-    // TODO: replace linear ramp with S-curve for smoother operation.
-    uint32_t ramp = s_status.accelSteps ? s_status.accelSteps : 0;
-
-    for (int32_t i = 0; i < count; i++) {
-        if (ramp > 0) {
-            // Linear speed ramp: start at 4× period, reach cruise at ramp end.
-            uint32_t phase  = (i < (int32_t)ramp) ? i : (int32_t)ramp;
-            uint32_t decel  = (count - 1 - i);
-            if (decel < (int32_t)ramp) phase = decel;
-            // period scales from 4× cruise down to 1× cruise
-            uint32_t period = s_status.speedUs +
-                              (s_status.speedUs * 3 * (ramp - phase)) / ramp;
-            digitalWrite(PIN_DIR, (dir ^ s_status.dirFlipped) ? HIGH : LOW);
-            digitalWrite(PIN_STEP, HIGH); ets_delay_us(period);
-            digitalWrite(PIN_STEP, LOW);  ets_delay_us(period);
-            s_status.position += (dir ? 1 : -1);
-        } else {
-            do_step(dir);
-        }
-        if ((i & 0x3F) == 0x3F) taskYIELD();
-    }
+static void motor_prefs_load()
+{
+    Preferences prefs;
+    prefs.begin(MOTOR_NS, true);
+    s_status.dirFlipped = prefs.getBool("dirFlip", false);
+    s_status.microsteps = prefs.getUShort("microsteps", 16);
+    s_status.currentMA = prefs.getUShort("currentMA", 600);
+    s_status.speedHz = prefs.getULong("speedHz", 1000);
+    s_status.accelHz = prefs.getULong("accelHz", 1000);
+    s_status.enabled = prefs.getBool("enabled", true);
+    prefs.end();
 }
 
-// ─── FreeRTOS motor task ──────────────────────────────────────────────────────
-static void motorTask(void *) {
-    MotorQueueCmd cmd;
-    for (;;) {
-        if (xQueueReceive(s_queue, &cmd, portMAX_DELAY) != pdTRUE) continue;
+static void apply_speed_accel()
+{
+    if (!s_stepper)
+        return;
+    s_stepper->setSpeedInHz(s_status.speedHz ? s_status.speedHz : 1);
+    s_stepper->setAcceleration(s_status.accelHz ? s_status.accelHz : 100);
+}
 
-        if (!s_status.enabled) {
-            Serial.println("[motor] ERR: driver disabled");
+// ─── Monitor / homing task ────────────────────────────────────────────────────
+static void motorTask(void *)
+{
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        if (!s_stepper)
+            continue;
+
+        // ── Homing sequence ───────────────────────────────────────────────────
+        if (s_homing_req)
+        {
+            s_homing_req = false;
+            s_status.state = MotorState::MS_HOMING;
+            s_stepper->setSpeedInHz(200);
+            s_stepper->setAcceleration(500);
+            s_stepper->moveTo(-2000000L); // large negative target
+            while (s_stepper->isRunning())
+            {
+                if (digitalRead(PIN_DIAG) == LOW)
+                {
+                    s_stepper->forceStopAndNewPosition(0);
+                    s_status.position = 0;
+                    s_status.target = 0;
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+            apply_speed_accel();
+            s_status.state = MotorState::MS_IDLE;
+            Serial.println("[motor] homing done");
             continue;
         }
 
-        s_status.state = MotorState::MS_MOVING;
-
-        switch (cmd.type) {
-            case CmdType::MOVE_ABS: {
-                int32_t dist     = cmd.arg - s_status.position;
-                s_status.target  = cmd.arg;
-                run_steps(dist);
-                break;
-            }
-            case CmdType::MOVE_REL:
-                s_status.target = s_status.position + cmd.arg;
-                run_steps(cmd.arg);
-                break;
-
-            case CmdType::GO_HOME:
-                s_status.target = 0;
-                run_steps(-s_status.position);
-                break;
-
-            case CmdType::FIND_HOME:
-                // TODO: full stall-guard homing via SGT threshold on TMC2209.
-                // Current stub: move slowly until DIAG asserts (stall / endstop),
-                // then zero the position counter.
-                s_status.state = MotorState::MS_HOMING;
-                {
-                    const uint32_t saved = s_status.speedUs;
-                    s_status.speedUs = 2000;  // slow approach
-                    for (int i = 0; i < 50000; i++) {
-                        if (digitalRead(PIN_DIAG) == LOW) break;
-                        do_step(false);  // move in –direction toward home
-                        if ((i & 0x3F) == 0x3F) taskYIELD();
-                    }
-                    s_status.speedUs  = saved;
-                    s_status.position = 0;
-                    s_status.target   = 0;
-                }
-                break;
-
-            case CmdType::STOP:
-                xQueueReset(s_queue);
-                break;
-        }
-
-        if (s_status.state != MotorState::MS_HOMING) {
+        // ── Normal state tracking ─────────────────────────────────────────────
+        if (s_status.state == MotorState::MS_MOVING && !s_stepper->isRunning())
+        {
+            s_status.position = s_stepper->getCurrentPosition();
             s_status.target = s_status.position;
+            s_status.state = MotorState::MS_IDLE;
+            Serial.printf("[motor] done pos=%ld\n", (long)s_status.position);
         }
-        s_status.state = MotorState::MS_IDLE;
-        Serial.printf("[motor] done pos=%ld\n", (long)s_status.position);
     }
 }
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
-void motor_ctrl_init() {
+void motor_ctrl_init()
+{
+    motor_prefs_load();
 
-    // TMC2209 in standalone mode: configure via MS1/MS2 & VREF hardware pins.
-    // No UART initialisation needed.
-    pinMode(PIN_STEP_EN, OUTPUT);
-    pinMode(PIN_STEP,    OUTPUT);
-    pinMode(PIN_DIR,     OUTPUT);
-    // PIN_DIAG configured as OUTPUT blink by uart_task_start()
-    digitalWrite(PIN_STEP_EN, LOW);   // enable driver
+    // ── Configure TMC2209 via UART (borrow Serial1 on TMC pins) ──────────────
+    // Serial1 is free here — uart_task_start() has not been called yet.
+    // After this block, Serial1.end() releases it; uart_task_start() will
+    // re-init Serial1 on PIN_UART_OUT_TX/RX (IO21/IO20).
+    Serial1.begin(115200, SERIAL_8N1, TMC_PIN_RX, TMC_PIN_TX);
+    {
+        TMC2209Stepper tmc(&Serial1, TMC_R_SENSE, /*addr=*/0);
+        tmc.begin();
+        tmc.pdn_disable(true);     // enable UART control; disable PDN_UART power-down
+        tmc.I_scale_analog(false); // use UART-set current, not VREF pin
+        tmc.rms_current(s_status.currentMA);
+        
+        // test the stepper by rotating 1000 step then change the microstep to 16 and rotate back round 1000 steps ()
+        pinMode(PIN_STEP, OUTPUT);
+        pinMode(PIN_DIR, OUTPUT);
+        pinMode(PIN_STEP_EN, OUTPUT);
+        digitalWrite(PIN_STEP_EN, LOW); // enable driver (active LOW)
+        tmc.microsteps(8);
+        for (int i = 0; i < 1000; i++)
+        {
+            //toggle step pin
+            digitalWrite(PIN_STEP, ~digitalRead(PIN_STEP));
+            delay(1);
+        }
+        tmc.microsteps(32);
+        for (int i = 0; i < 1000; i++)
+        {
+            digitalWrite(PIN_STEP, ~digitalRead(PIN_STEP));
+            delay(1);
+        }
+        tmc.microsteps(s_status.microsteps);
+        tmc.en_spreadCycle(false);      // StealthChop (quieter)
+        tmc.shaft(s_status.dirFlipped); // apply saved direction polarity
+        Serial.printf("[motor] TMC2209 cfg: %umA %u ustep dir=%d\n",
+                      s_status.currentMA, s_status.microsteps,
+                      (int)s_status.dirFlipped);
+    }
+    Serial1.end(); // release; uart_task_start() re-claims on chain pins
+    // ─────────────────────────────────────────────────────────────────────────
 
-    s_queue = xQueueCreate(16, sizeof(MotorQueueCmd));
-    xTaskCreate(motorTask, "motor", 3072, nullptr, 1, nullptr);
+    s_engine.init();
+    s_stepper = s_engine.stepperConnectToPin(PIN_STEP);
+    if (!s_stepper)
+    {
+        Serial.println("[motor] ERR: stepperConnectToPin failed");
+        return;
+    }
+    // PIN_DIAG is owned by uart_task as a receive-blink output.
+    s_stepper->setDirectionPin(PIN_DIR, !s_status.dirFlipped);
+    s_stepper->setEnablePin(PIN_STEP_EN, true); // active LOW
+    s_stepper->setAutoEnable(false);
+    apply_speed_accel();
+
+    if (s_status.enabled)
+        s_stepper->enableOutputs();
+    else
+        s_stepper->disableOutputs();
+
+    xTaskCreate(motorTask, "motor", 2048, nullptr, 1, nullptr);
 }
-
-// ─── Chain forward ── moved to uart_task.cpp ─────────────────────────────────
 
 // ─── Identity ────────────────────────────────────────────────────────────────
-void    motor_setID(uint8_t newID)  { s_status.id = newID & 0x0F; }
-uint8_t motor_getID()               { return s_status.id; }
+void motor_setID(uint8_t newID) { g_board_id = newID & 0x07; }
+uint8_t motor_getID() { return g_board_id; }
 
 // ─── Motion ──────────────────────────────────────────────────────────────────
-void motor_moveTo(uint8_t id, int32_t pos) {
-    if (!id_match(id)) return;
-    MotorQueueCmd c = { CmdType::MOVE_ABS, pos };
-    xQueueSend(s_queue, &c, 0);
+void motor_moveTo(uint8_t id, int32_t pos)
+{
+    if (!id_match(id) || !s_stepper)
+        return;
+    s_status.target = pos;
+    s_status.state = MotorState::MS_MOVING;
+    s_stepper->moveTo(pos);
 }
 
-void motor_move(uint8_t id, int32_t dist) {
-    if (!id_match(id)) return;
-    MotorQueueCmd c = { CmdType::MOVE_REL, dist };
-    xQueueSend(s_queue, &c, 0);
+void motor_move(uint8_t id, int32_t dist)
+{
+    if (!id_match(id) || !s_stepper)
+        return;
+    s_status.target = s_stepper->getCurrentPosition() + dist;
+    s_status.state = MotorState::MS_MOVING;
+    s_stepper->move(dist);
 }
 
-void motor_goHome(uint8_t id) {
-    if (!id_match(id)) return;
-    MotorQueueCmd c = { CmdType::GO_HOME, 0 };
-    xQueueSend(s_queue, &c, 0);
+void motor_goHome(uint8_t id)
+{
+    if (!id_match(id) || !s_stepper)
+        return;
+    s_status.target = 0;
+    s_status.state = MotorState::MS_MOVING;
+    s_stepper->moveTo(0);
 }
 
-void motor_findHome(uint8_t id) {
-    if (!id_match(id)) return;
-    MotorQueueCmd c = { CmdType::FIND_HOME, 0 };
-    xQueueSend(s_queue, &c, 0);
+void motor_findHome(uint8_t id)
+{
+    if (!id_match(id))
+        return;
+    s_homing_req = true;
 }
 
-void motor_stop(uint8_t id) {
-    if (!id_match(id)) return;
-    xQueueReset(s_queue);
-    s_status.state  = MotorState::MS_IDLE;
+void motor_stop(uint8_t id)
+{
+    if (!id_match(id) || !s_stepper)
+        return;
+    s_stepper->forceStopAndNewPosition(s_stepper->getCurrentPosition());
+    s_status.position = s_stepper->getCurrentPosition();
     s_status.target = s_status.position;
+    s_status.state = MotorState::MS_IDLE;
 }
 
 // ─── Configuration ───────────────────────────────────────────────────────────
-void motor_setPosition(uint8_t id, int32_t pos) {
-    if (!id_match(id)) return;
+void motor_setPosition(uint8_t id, int32_t pos)
+{
+    if (!id_match(id) || !s_stepper)
+        return;
+    s_stepper->setCurrentPosition(pos);
     s_status.position = pos;
-    s_status.target   = pos;
+    s_status.target = pos;
 }
 
-void motor_flipDir(uint8_t id) {
-    if (!id_match(id)) return;
+void motor_flipDir(uint8_t id)
+{
+    if (!id_match(id) || !s_stepper)
+        return;
     s_status.dirFlipped = !s_status.dirFlipped;
+    s_stepper->setDirectionPin(PIN_DIR, !s_status.dirFlipped);
+    motor_prefs_save();
 }
 
-void motor_setStepSize(uint8_t id, uint16_t ustep) {
-    if (!id_match(id)) return;
+void motor_setStepSize(uint8_t id, uint16_t ustep)
+{
+    if (!id_match(id))
+        return;
     s_status.microsteps = ustep;
     // microstep config is hardware (MS1/MS2 pins) in standalone mode
+    motor_prefs_save();
 }
 
-void motor_setCurrent(uint8_t id, uint16_t mA) {
-    if (!id_match(id)) return;
+void motor_setCurrent(uint8_t id, uint16_t mA)
+{
+    if (!id_match(id))
+        return;
     s_status.currentMA = mA;
     // current set by VREF hardware in standalone mode
+    motor_prefs_save();
 }
 
-void motor_setSpeed(uint8_t id, uint32_t halfUs) {
-    if (!id_match(id)) return;
-    s_status.speedUs = halfUs;
+void motor_setSpeed(uint8_t id, uint32_t hz)
+{
+    if (!id_match(id))
+        return;
+    s_status.speedHz = hz ? hz : 1;
+    if (s_stepper)
+        s_stepper->setSpeedInHz(s_status.speedHz);
+    motor_prefs_save();
 }
 
-void motor_setAccel(uint8_t id, uint32_t rampSteps) {
-    if (!id_match(id)) return;
-    s_status.accelSteps = rampSteps;
+void motor_setAccel(uint8_t id, uint32_t stepsPerSec2)
+{
+    if (!id_match(id))
+        return;
+    s_status.accelHz = stepsPerSec2 ? stepsPerSec2 : 100;
+    if (s_stepper)
+        s_stepper->setAcceleration(s_status.accelHz);
+    motor_prefs_save();
 }
 
-void motor_enable(uint8_t id, bool en) {
-    if (!id_match(id)) return;
+void motor_enable(uint8_t id, bool en)
+{
+    if (!id_match(id) || !s_stepper)
+        return;
     s_status.enabled = en;
-    digitalWrite(PIN_STEP_EN, en ? LOW : HIGH);
-    s_status.state = en ? MotorState::MS_IDLE : MotorState::MS_DISABLED;
+    if (en)
+    {
+        s_stepper->enableOutputs();
+        s_status.state = MotorState::MS_IDLE;
+    }
+    else
+    {
+        s_stepper->disableOutputs();
+        s_status.state = MotorState::MS_DISABLED;
+    }
+    motor_prefs_save();
 }
 
 // ─── Query ───────────────────────────────────────────────────────────────────
-bool motor_getStatus(uint8_t id, MotorStatus &out) {
-    if (!id_match(id)) return false;
+bool motor_getStatus(uint8_t id, MotorStatus &out)
+{
+    if (!id_match(id))
+        return false;
+    if (s_stepper)
+        s_status.position = s_stepper->getCurrentPosition();
     out = s_status;
     return true;
 }

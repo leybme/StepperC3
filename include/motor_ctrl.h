@@ -15,7 +15,7 @@ enum class MotorState : uint8_t {
 
 // ─── Per-node runtime status ─────────────────────────────────────────────────
 struct MotorStatus {
-    uint8_t    id;           // node motor ID (0-9)
+    uint8_t    id;           // node board ID (0-7, mirrors g_board_id)
     int32_t    position;     // current absolute position (steps)
     int32_t    target;       // current target position (steps)
     MotorState state;
@@ -23,8 +23,8 @@ struct MotorStatus {
     bool       dirFlipped;   // direction polarity inverted
     uint16_t   microsteps;   // 1 / 2 / 4 / 8 / 16 / 32 / 64 / 256
     uint16_t   currentMA;    // RMS current (mA)
-    uint32_t   speedUs;      // step half-period µs at cruise speed
-    uint32_t   accelSteps;   // acceleration ramp length (steps; 0 = off)
+    uint32_t   speedHz;      // cruise speed (steps/second)
+    uint32_t   accelHz;      // acceleration (steps/second²; 0 = use 100)
 };
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
@@ -32,8 +32,8 @@ struct MotorStatus {
 void    motor_ctrl_init();
 
 // ─── Identity ────────────────────────────────────────────────────────────────
-// Each node has one ID (0-9).  Motion commands carry an ID; the node only
-// executes if the ID matches.  All other commands are forwarded downstream.
+// Board ID (0-7) is stored in g_board_id (board_prefs.h) and persisted to NVS.
+// motor_setID / motor_getID are thin wrappers around g_board_id.
 void    motor_setID (uint8_t newID);
 uint8_t motor_getID ();
 
@@ -49,8 +49,8 @@ void motor_setPosition (uint8_t id, int32_t pos);        // redefine current pos
 void motor_flipDir     (uint8_t id);                     // toggle direction polarity
 void motor_setStepSize (uint8_t id, uint16_t microsteps);// 1/2/4/8/16/32/64/256
 void motor_setCurrent  (uint8_t id, uint16_t mA);        // RMS current in mA
-void motor_setSpeed    (uint8_t id, uint32_t halfPeriodUs); // step half-period µs (lower = faster)
-void motor_setAccel    (uint8_t id, uint32_t rampSteps); // accel ramp (0 = disabled)
+void motor_setSpeed    (uint8_t id, uint32_t stepsPerSec);  // cruise speed in steps/second
+void motor_setAccel    (uint8_t id, uint32_t stepsPerSec2); // acceleration steps/s² (0 → 100)
 void motor_enable      (uint8_t id, bool en);            // enable / disable driver output
 
 // ─── Query ───────────────────────────────────────────────────────────────────

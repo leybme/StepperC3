@@ -7,9 +7,10 @@
 #define PIN_STEP      1   // IO1
 #define PIN_STEP_EN   4   // IO4  — LOW = enabled
 #define PIN_DIAG      5   // IO5  — DIAG output from TMC2209
-// TMC2209
-#define TMC_PIN_TX        6 
-#define TMC_PIN_RX        7  
+// TMC2209 UART config (borrowed at boot, pins re-used for daisy-chain after)
+#define TMC_PIN_TX        6   // IO6 → TMC2209 PDN_UART TX
+#define TMC_PIN_RX        7   // IO7 → TMC2209 PDN_UART RX
+#define TMC_R_SENSE       0.11f  // current-sense resistor (ohms)
 
 // UART IN: from upstream node (Serial0 / UART_NUM_0)
 #define PIN_UART_IN_RX   3   // IO3 — RX from upstream

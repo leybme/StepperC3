@@ -1,4 +1,5 @@
 #include "uart_task.h"
+#include "usb_task.h"
 #include <board.h>
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
@@ -9,7 +10,10 @@
 //   TX = PIN_UART_IN_TX  (IO2)  → ACK back to upstream
 // ─── UART OUT: Serial1 (UART_NUM_1) ─────────────────────────────────────────
 //   TX = PIN_UART_OUT_TX (IO21) → send downstream
-#define BAUD_CHAIN  115200
+//
+// Noise rejection: SERIAL_8E1 (even parity) — hardware rejects single-bit errors.
+#define BAUD_CHAIN    115200
+#define UART_CONFIG   SERIAL_8E1
 
 // ─── uart_forward: write raw bytes downstream via Serial1 ────────────────────
 void uart_forward(const uint8_t *data, size_t len)
@@ -20,13 +24,13 @@ void uart_forward(const uint8_t *data, size_t len)
 // ─── UART chain task ──────────────────────────────────────────────────────────
 static void uartTask(void *)
 {
-    TickType_t lastTest = xTaskGetTickCount();
-    uint32_t   testSeq  = 0;
-    bool       diagState = false;
+    static char lineBuf[256];
+    uint16_t    lineIdx  = 0;
+    bool        diagState = false;
 
     for (;;)
     {
-        // ── receive from upstream (Serial0) and forward downstream (Serial1) ──
+        // ── receive from upstream (Serial0), parse, forward if not ours ──────
         while (Serial0.available())
         {
             char c = (char)Serial0.read();
@@ -35,21 +39,17 @@ static void uartTask(void *)
             diagState = !diagState;
             digitalWrite(PIN_DIAG, diagState ? HIGH : LOW);
 
-            // forward immediately downstream
-            Serial1.write((uint8_t)c);
+            // buffer the byte
+            if (lineIdx < sizeof(lineBuf) - 1)
+                lineBuf[lineIdx++] = c;
 
-            // mirror every byte to USB CDC immediately
-            Serial.write((uint8_t)c);
-        }
-
-        // ── 100 ms test transmission via UART OUT ─────────────────────────────
-        if (xTaskGetTickCount() - lastTest >= pdMS_TO_TICKS(100))
-        {
-            char testMsg[32];
-            int  len = snprintf(testMsg, sizeof(testMsg), "TEST %lu\r\n", (unsigned long)testSeq++);
-            uart_forward((const uint8_t *)testMsg, (size_t)len);
-            Serial.printf("[uart_out] %s", testMsg);
-            lastTest = xTaskGetTickCount();
+            // on newline: hand the complete line to the command parser
+            if (c == '\n')
+            {
+                lineBuf[lineIdx] = '\0';
+                process_cmd(lineBuf);   // execute locally or forward downstream
+                lineIdx = 0;
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(5));
@@ -59,13 +59,23 @@ static void uartTask(void *)
 void uart_task_start()
 {
     // UART IN: Serial0 on IO3(RX) / IO2(TX)
-    Serial0.begin(BAUD_CHAIN, SERIAL_8N1, PIN_UART_IN_RX, PIN_UART_IN_TX);
-    Serial.printf("[uart] UART_IN  Serial0 RX=%d TX=%d\r\n",
+    // SERIAL_8E1: even parity — hardware rejects corrupted bytes automatically
+    // setRxFIFOFull(1): UART interrupt on every single byte, no build-up in FIFO
+    pinMode(PIN_UART_IN_RX, INPUT_PULLUP);   // idle-high; prevents noise when no upstream
+    Serial0.begin(BAUD_CHAIN, UART_CONFIG, PIN_UART_IN_RX, PIN_UART_IN_TX);
+    Serial0.setRxFIFOFull(1);
+    Serial0.onReceiveError([](hardwareSerial_error_t e) {
+        const char *desc = (e == UART_PARITY_ERROR)  ? "PARITY"  :
+                           (e == UART_FRAME_ERROR)   ? "FRAME"   :
+                           (e == UART_BUFFER_FULL_ERROR) ? "BUF_FULL" : "OTHER";
+        Serial.printf("[uart_in] RX ERROR: %s\r\n", desc);
+    });
+    Serial.printf("[uart] UART_IN  Serial0 RX=%d TX=%d  8E1 parity\r\n",
                   PIN_UART_IN_RX, PIN_UART_IN_TX);
 
-    // UART OUT: Serial1 on IO21(TX) / IO20(RX, unused)
-    Serial1.begin(BAUD_CHAIN, SERIAL_8N1, PIN_UART_OUT_RX, PIN_UART_OUT_TX);
-    Serial.printf("[uart] UART_OUT Serial1 TX=%d\r\n", PIN_UART_OUT_TX);
+    // UART OUT: Serial1 on IO21(TX) / IO20(RX, unused) — same config as IN
+    Serial1.begin(BAUD_CHAIN, UART_CONFIG, PIN_UART_OUT_RX, PIN_UART_OUT_TX);
+    Serial.printf("[uart] UART_OUT Serial1 TX=%d  8E1 parity\r\n", PIN_UART_OUT_TX);
 
     // DIAG pin — output for blink indicator
     pinMode(PIN_DIAG, OUTPUT);
