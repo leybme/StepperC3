@@ -127,7 +127,7 @@ void motor_ctrl_init()
     // Serial1 is free here — uart_task_start() has not been called yet.
     // After this block, Serial1.end() releases it; uart_task_start() will
     // re-init Serial1 on PIN_UART_OUT_TX/RX (IO21/IO20).
-    Serial1.begin(115200, SERIAL_8N1, TMC_PIN_RX, TMC_PIN_TX);
+    Serial1.begin(115200, SERIAL_8N1, /*rx=*/-1, /*tx=*/TMC_PIN_RX);
     {
         TMC2209Stepper tmc(&Serial1, TMC_R_SENSE, /*addr=*/0);
         tmc.begin();
@@ -135,24 +135,25 @@ void motor_ctrl_init()
         tmc.I_scale_analog(false); // use UART-set current, not VREF pin
         tmc.rms_current(s_status.currentMA);
         
-        // test the stepper by rotating 1000 step then change the microstep to 16 and rotate back round 1000 steps ()
-        pinMode(PIN_STEP, OUTPUT);
-        pinMode(PIN_DIR, OUTPUT);
-        pinMode(PIN_STEP_EN, OUTPUT);
-        digitalWrite(PIN_STEP_EN, LOW); // enable driver (active LOW)
-        tmc.microsteps(8);
-        for (int i = 0; i < 1000; i++)
-        {
-            //toggle step pin
-            digitalWrite(PIN_STEP, ~digitalRead(PIN_STEP));
-            delay(1);
-        }
-        tmc.microsteps(32);
-        for (int i = 0; i < 1000; i++)
-        {
-            digitalWrite(PIN_STEP, ~digitalRead(PIN_STEP));
-            delay(1);
-        }
+        // // test the stepper by rotating 1000 step then change the microstep to 16 and rotate back round 1000 steps ()
+        // pinMode(PIN_STEP, OUTPUT);
+        // pinMode(PIN_DIR, OUTPUT);
+        // pinMode(PIN_STEP_EN, OUTPUT);
+        // digitalWrite(PIN_STEP_EN, LOW); // enable driver (active LOW)
+        // tmc.microsteps(8);
+        // for (int i = 0; i < 3200; i++)
+        // {
+        //     //toggle step pin
+        //     digitalWrite(PIN_STEP, !digitalRead(PIN_STEP));
+        //     delay(1);
+        // }
+        // delay(500);
+        // tmc.microsteps(32);
+        // for (int i = 0; i < 3200; i++)
+        // {
+        //     digitalWrite(PIN_STEP, !digitalRead(PIN_STEP));
+        //     delay(1);
+        // }
         tmc.microsteps(s_status.microsteps);
         tmc.en_spreadCycle(false);      // StealthChop (quieter)
         tmc.shaft(s_status.dirFlipped); // apply saved direction polarity
