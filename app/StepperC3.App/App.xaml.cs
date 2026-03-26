@@ -8,4 +8,3 @@ namespace StepperC3.App;
 public partial class App : Application
 {
 }
-

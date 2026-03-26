@@ -54,6 +54,8 @@ public class MainViewModel : ViewModelBase
     public ObservableCollection<string> AvailablePorts { get; }
     public ObservableCollection<string> LogMessages { get; }
 
+    public int EnabledStepCount => Steps.Count(s => s.IsEnabled);
+
     private string _taskListName = "Untitled Task";
     public string TaskListName
     {
@@ -184,6 +186,7 @@ public class MainViewModel : ViewModelBase
         CurrentFilePath = null;
         LogMessages.Clear();
         Log("New task list created.");
+        OnPropertyChanged(nameof(EnabledStepCount));
     }
 
     private async Task OpenTaskListAsync()
@@ -206,6 +209,7 @@ public class MainViewModel : ViewModelBase
             TaskListDescription = _taskList.Description;
             CurrentFilePath = dlg.FileName;
             Log($"Loaded: {dlg.FileName} ({_taskList.Steps.Count} steps)");
+            OnPropertyChanged(nameof(EnabledStepCount));
         }
         catch (Exception ex)
         {
@@ -264,6 +268,7 @@ public class MainViewModel : ViewModelBase
         SelectedStep = vm;
         SelectedStepIndex = Steps.Count - 1;
         Log($"Added: {step.GetDescription()}");
+        OnPropertyChanged(nameof(EnabledStepCount));
     }
 
     private void RemoveStep()
@@ -279,6 +284,7 @@ public class MainViewModel : ViewModelBase
             SelectedStepIndex = Math.Min(idx, Steps.Count - 1);
 
         Log($"Removed: {desc}");
+        OnPropertyChanged(nameof(EnabledStepCount));
     }
 
     private void MoveStepUp()
@@ -319,6 +325,7 @@ public class MainViewModel : ViewModelBase
         Steps.Insert(idx + 1, vm);
         SelectedStepIndex = idx + 1;
         Log($"Duplicated step {idx}");
+        OnPropertyChanged(nameof(EnabledStepCount));
     }
 
     private void ToggleStep()
@@ -326,6 +333,7 @@ public class MainViewModel : ViewModelBase
         if (SelectedStep is null) return;
         SelectedStep.IsEnabled = !SelectedStep.IsEnabled;
         Log($"Step {SelectedStepIndex} is now {(SelectedStep.IsEnabled ? "enabled" : "disabled")}");
+        OnPropertyChanged(nameof(EnabledStepCount));
     }
 
     private void ClearSteps()
@@ -333,6 +341,7 @@ public class MainViewModel : ViewModelBase
         Steps.Clear();
         _taskList.Clear();
         Log("All steps cleared.");
+        OnPropertyChanged(nameof(EnabledStepCount));
     }
 
     // ─── Connection ──────────────────────────────────────────────────────

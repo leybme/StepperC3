@@ -56,7 +56,7 @@
                     <TextBlock.Text>
                         <MultiBinding StringFormat="{}{0} steps ({1} enabled)">
                             <Binding Path="Steps.Count" />
-                            <Binding Path="Steps.Count" />
+                            <Binding Path="EnabledStepCount" />
                         </MultiBinding>
                     </TextBlock.Text>
                 </TextBlock>
