@@ -37,11 +37,15 @@
 //  DISABLE                   Disable stepper driver output
 //  STOP                      Emergency stop, clear queue
 //  STATUS                    Query full status
+//  CHECKIDLE   <timeout_ms>  Wait until motor is idle; responds IDLE <id>\r\n
+//                            or ERR CHECKIDLE timeout <id>\r\n on expiry
 //
 //  Responses:
 //    OK <COMMAND> <id>
 //    STATUS <id> pos=<n> tgt=<n> state=<s> en=<0/1> flip=<0/1>
 //           step=<n> cur=<n>mA spd=<n>us accel=<n>
+//    IDLE <id>                  (response to CHECKIDLE when motor is idle)
+//    ERR CHECKIDLE timeout <id> (response to CHECKIDLE when timeout expires)
 //    ERR <reason>
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -52,6 +56,37 @@ static void send_ok(const char *cmd, int id = -1) {
 
 static void send_err(const char *reason) {
     Serial.printf("ERR %s\r\n", reason);
+}
+
+// ─── CHECKIDLE support ────────────────────────────────────────────────────────────────
+struct CheckIdleArgs { uint8_t id; uint32_t timeout_ms; };
+
+static void checkIdleTask(void *arg)
+{
+    auto *a = static_cast<CheckIdleArgs *>(arg);
+    const uint32_t poll_ms = 100;
+    uint32_t elapsed = 0;
+    MotorStatus st;
+    bool ok = false;
+
+    while (elapsed < a->timeout_ms) {
+        if (motor_getStatus(a->id, st) && st.state == MotorState::MS_IDLE) {
+            ok = true;
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(poll_ms));
+        elapsed += poll_ms;
+    }
+
+    char resp[48];
+    if (ok)
+        snprintf(resp, sizeof(resp), "IDLE %d\r\n", a->id);
+    else
+        snprintf(resp, sizeof(resp), "ERR CHECKIDLE timeout %d\r\n", a->id);
+    send_upstream(resp);
+
+    free(a);
+    vTaskDelete(nullptr);
 }
 
 static const char *state_str(MotorState s) {
@@ -106,6 +141,7 @@ void process_cmd(char *line) {
             "  <id> DISABLE         Disable driver\r\n"
             "  <id> STOP            Emergency stop\r\n"
             "  <id> STATUS          Query status\r\n"
+            "  <id> CHECKIDLE <ms>  Wait until idle (responds IDLE <id> or ERR CHECKIDLE timeout <id>)\r\n"
         );
         Serial.printf("This Board ID: %d\r\n", g_board_id);
         return;
@@ -228,6 +264,17 @@ void process_cmd(char *line) {
     // ── ENABLE / DISABLE ──────────────────────────────────────────────────────
     if (strcasecmp(cmd, "ENABLE") == 0)  { motor_enable(id, true);  send_ok("ENABLE",  id); return; }
     if (strcasecmp(cmd, "DISABLE") == 0) { motor_enable(id, false); send_ok("DISABLE", id); return; }
+
+    // ── CHECKIDLE ────────────────────────────────────────────────────────────────
+    if (strcasecmp(cmd, "CHECKIDLE") == 0) {
+        if (n < 3) { send_err("CHECKIDLE needs <timeout_ms>"); return; }
+        auto *args = static_cast<CheckIdleArgs *>(malloc(sizeof(CheckIdleArgs)));
+        if (!args) { send_err("OOM"); return; }
+        args->id         = id;
+        args->timeout_ms = (uint32_t)atol(tok[2]);
+        xTaskCreate(checkIdleTask, "chkidle", 3072, args, 2, nullptr);
+        return;
+    }
 
     send_err("unknown command — send HELP");
 }

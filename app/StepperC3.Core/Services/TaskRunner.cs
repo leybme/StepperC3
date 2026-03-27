@@ -55,6 +55,21 @@ public class TaskRunner
                 _cts.Token.ThrowIfCancellationRequested();
 
                 var step = enabledSteps[i];
+
+                // ResetTask: restart the sequence from the beginning
+                if (step is ResetTaskStep)
+                {
+                    StepExecuted?.Invoke(this, new StepExecutedEventArgs
+                    {
+                        StepIndex = i,
+                        TotalSteps = enabledSteps.Count,
+                        Step = step,
+                        Success = true
+                    });
+                    i = -1; // will be incremented to 0 by the for-loop
+                    continue;
+                }
+
                 var success = true;
                 string? error = null;
 
@@ -110,6 +125,10 @@ public class TaskRunner
                 await Task.Delay(waitStep.DurationMs, ct);
                 break;
 
+            case WaitForIdleStep waitIdle:
+                await WaitForMotorIdleAsync(waitIdle, ct);
+                break;
+
             case RunCommandStep runCmd:
                 await RunExternalCommandAsync(runCmd, ct);
                 break;
@@ -122,6 +141,32 @@ public class TaskRunner
                     await _connection.SendCommandAsync(command, ct);
                 }
                 break;
+        }
+    }
+
+    private async Task WaitForMotorIdleAsync(WaitForIdleStep step, CancellationToken ct)
+    {
+        // Add extra margin so our token fires after the firmware timeout
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(step.TimeoutMs + 5000);
+
+        // Send the CHECKIDLE command once; the firmware handles polling internally
+        await _connection.SendCommandAsync(step.ToCommand(), timeoutCts.Token);
+
+        // Read lines until we receive IDLE <id> (success) or ERR CHECKIDLE timeout <id>
+        var idlePrefix = $"IDLE {step.MotorId ?? 0}";
+        var errPrefix  = $"ERR CHECKIDLE timeout {step.MotorId ?? 0}";
+
+        while (true)
+        {
+            var line = await _connection.ReadLineAsync(timeoutCts.Token);
+            if (line is null) continue;
+            line = line.Trim();
+            if (line.StartsWith(idlePrefix, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (line.StartsWith(errPrefix, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    $"Motor {step.MotorId} did not reach idle within {step.TimeoutMs} ms");
         }
     }
 

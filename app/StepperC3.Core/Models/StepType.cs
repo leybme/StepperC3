@@ -45,5 +45,14 @@ public enum StepType
     Stop,
 
     /// <summary>Flip motor direction polarity.</summary>
-    FlipDirection
+    FlipDirection,
+
+    /// <summary>Redefine current position without motion (offset calibration).</summary>
+    SetPosition,
+
+    /// <summary>Wait until motor reports idle state (polls STATUS).</summary>
+    WaitForIdle,
+
+    /// <summary>Restart the task list from the first step.</summary>
+    ResetTask
 }

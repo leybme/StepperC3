@@ -29,6 +29,9 @@ public static class StepFactory
             StepType.Disable => new DisableStep { MotorId = motorId },
             StepType.Stop => new StopStep { MotorId = motorId },
             StepType.FlipDirection => new FlipDirectionStep { MotorId = motorId },
+            StepType.SetPosition => new SetPositionStep { MotorId = motorId, Position = 0 },
+            StepType.WaitForIdle => new WaitForIdleStep { MotorId = motorId },
+            StepType.ResetTask => new ResetTaskStep(),
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unknown step type.")
         };
     }
@@ -38,6 +41,10 @@ public static class StepFactory
     /// </summary>
     public static IReadOnlyList<StepTypeInfo> GetAvailableStepTypes() =>
     [
+        new(StepType.Wait,            "Wait",             "Pause for specified duration",            "Flow Control"),
+        new(StepType.WaitForIdle,     "Wait Idle",        "Wait until motor reaches idle state",    "Flow Control"),
+        new(StepType.ResetTask,       "Reset Task",       "Restart task list from the first step",  "Flow Control"),
+        new(StepType.RunCommand,      "Run Command",      "Execute an external command or script",  "Flow Control"),
         new(StepType.MoveTo,          "Move To",          "Move motor to absolute position",        "Motion"),
         new(StepType.MoveBy,          "Move By",          "Move motor by relative distance",        "Motion"),
         new(StepType.GoHome,          "Go Home",          "Return motor to position 0",             "Motion"),
@@ -47,11 +54,10 @@ public static class StepFactory
         new(StepType.SetAcceleration, "Set Acceleration", "Set motor acceleration (steps/s²)",      "Configuration"),
         new(StepType.SetCurrent,      "Set Current",      "Set motor RMS current (mA)",             "Configuration"),
         new(StepType.SetMicrostep,    "Set Microstep",    "Set microstep resolution",               "Configuration"),
+        new(StepType.SetPosition,     "Set Position",     "Redefine position counter (no motion)", "Configuration"),
         new(StepType.Enable,          "Enable",           "Enable motor driver",                    "Configuration"),
         new(StepType.Disable,         "Disable",          "Disable motor driver",                   "Configuration"),
         new(StepType.FlipDirection,   "Flip Direction",   "Toggle direction polarity",              "Configuration"),
-        new(StepType.Wait,            "Wait",             "Pause for specified duration",            "Flow Control"),
-        new(StepType.RunCommand,      "Run Command",      "Execute an external command or script",  "Flow Control")
     ];
 }
 

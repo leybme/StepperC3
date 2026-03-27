@@ -24,7 +24,8 @@ public class MainViewModel : ViewModelBase
     {
         _taskList = new TaskList { Name = "Untitled Task" };
         Steps = [];
-        AvailableStepTypes = new ObservableCollection<StepTypeInfo>(StepFactory.GetAvailableStepTypes());
+        AvailableStepTypes = new ObservableCollection<PaletteItemViewModel>(
+            StepFactory.GetAvailableStepTypes().Select(i => new PaletteItemViewModel(i)));
         AvailablePorts = new ObservableCollection<string>(SerialPort.GetPortNames());
         LogMessages = [];
 
@@ -50,7 +51,7 @@ public class MainViewModel : ViewModelBase
     // ─── Properties ──────────────────────────────────────────────────────
 
     public ObservableCollection<StepViewModel> Steps { get; }
-    public ObservableCollection<StepTypeInfo> AvailableStepTypes { get; }
+    public ObservableCollection<PaletteItemViewModel> AvailableStepTypes { get; }
     public ObservableCollection<string> AvailablePorts { get; }
     public ObservableCollection<string> LogMessages { get; }
 
@@ -84,18 +85,11 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _selectedStepIndex, value);
     }
 
-    private StepTypeInfo? _selectedStepType;
-    public StepTypeInfo? SelectedStepType
+    private PaletteItemViewModel? _selectedStepType;
+    public PaletteItemViewModel? SelectedStepType
     {
         get => _selectedStepType;
         set => SetProperty(ref _selectedStepType, value);
-    }
-
-    private int _newStepMotorId;
-    public int NewStepMotorId
-    {
-        get => _newStepMotorId;
-        set => SetProperty(ref _newStepMotorId, value);
     }
 
     private string? _selectedPort;
@@ -261,22 +255,22 @@ public class MainViewModel : ViewModelBase
     {
         if (SelectedStepType is null) return;
 
-        var step = StepFactory.Create(SelectedStepType.Type, NewStepMotorId);
-        var vm = new StepViewModel(step);
-        Steps.Add(vm);
-        _taskList.AddStep(step);
-        SelectedStep = vm;
-        SelectedStepIndex = Steps.Count - 1;
-        Log($"Added: {step.GetDescription()}");
-        OnPropertyChanged(nameof(EnabledStepCount));
+        var step = SelectedStepType.CreateStep();
+        InsertStepAt(Steps.Count, step);
     }
 
     private void RemoveStep()
     {
         if (SelectedStep is null || SelectedStepIndex < 0) return;
+        RemoveStepAt(SelectedStepIndex);
+    }
 
-        var idx = SelectedStepIndex;
-        var desc = SelectedStep.Description;
+    /// <summary>Removes the step at the given index from both the view and model.</summary>
+    public void RemoveStepAt(int idx)
+    {
+        if (idx < 0 || idx >= Steps.Count) return;
+
+        var desc = Steps[idx].Description;
         Steps.RemoveAt(idx);
         _taskList.RemoveStepAt(idx);
 
@@ -284,6 +278,18 @@ public class MainViewModel : ViewModelBase
             SelectedStepIndex = Math.Min(idx, Steps.Count - 1);
 
         Log($"Removed: {desc}");
+        OnPropertyChanged(nameof(EnabledStepCount));
+    }
+
+    /// <summary>Inserts a new step at the given index in both the view and model.</summary>
+    public void InsertStepAt(int idx, AutomationStep step)
+    {
+        idx = Math.Clamp(idx, 0, Steps.Count);
+        var vm = new StepViewModel(step);
+        Steps.Insert(idx, vm);
+        _taskList.InsertStep(idx, step);
+        SelectedStepIndex = idx;
+        Log($"Inserted: {step.GetDescription()}");
         OnPropertyChanged(nameof(EnabledStepCount));
     }
 

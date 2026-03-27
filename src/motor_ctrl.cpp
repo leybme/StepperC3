@@ -156,7 +156,7 @@ void motor_ctrl_init()
     // Serial1 is free here — uart_task_start() has not been called yet.
     // After this block, Serial1.end() releases it; uart_task_start() will
     // re-init Serial1 on PIN_UART_OUT_TX/RX (IO21/IO20).
-    Serial1.begin(115200, SERIAL_8N1, /*rx=*/-1, /*tx=*/TMC_PIN_RX);
+    Serial1.begin(115200, SERIAL_8N1, /*rx=*/-1, /*tx=*/TMC_PIN_TX);
     {
         TMC2209Stepper tmc(&Serial1, TMC_R_SENSE, /*addr=*/0);
         tmc.begin();

@@ -20,6 +20,9 @@ namespace StepperC3.Core.Models;
 [JsonDerivedType(typeof(DisableStep), "Disable")]
 [JsonDerivedType(typeof(StopStep), "Stop")]
 [JsonDerivedType(typeof(FlipDirectionStep), "FlipDirection")]
+[JsonDerivedType(typeof(SetPositionStep), "SetPosition")]
+[JsonDerivedType(typeof(WaitForIdleStep), "WaitForIdle")]
+[JsonDerivedType(typeof(ResetTaskStep), "ResetTask")]
 public abstract class AutomationStep
 {
     /// <summary>Unique identifier for this step.</summary>
@@ -182,4 +185,33 @@ public class FlipDirectionStep : AutomationStep
 
     public override string ToCommand() => $"{MotorId} FLIPDIR";
     public override string GetDescription() => $"Flip direction of Motor {MotorId}";
+}
+
+/// <summary>Redefine current position without motion (e.g. after manual alignment).</summary>
+public class SetPositionStep : AutomationStep
+{
+    public override StepType Type => StepType.SetPosition;
+    public long Position { get; set; }
+
+    public override string ToCommand() => $"{MotorId} SETPOS {Position}";
+    public override string GetDescription() => $"Set Motor {MotorId} position to {Position}";
+}
+
+/// <summary>Restart the task list from the first step.</summary>
+public class ResetTaskStep : AutomationStep
+{
+    public override StepType Type => StepType.ResetTask;
+
+    public override string ToCommand() => string.Empty; // Handled by TaskRunner, not sent via serial
+    public override string GetDescription() => "Reset task to beginning";
+}
+
+/// <summary>Wait until motor reports IDLE state by polling STATUS.</summary>
+public class WaitForIdleStep : AutomationStep
+{
+    public override StepType Type => StepType.WaitForIdle;
+    public int TimeoutMs { get; set; } = 30000;
+
+    public override string ToCommand() => $"{MotorId ?? 0} CHECKIDLE {TimeoutMs}";
+    public override string GetDescription() => $"Wait Motor {MotorId} idle (timeout {TimeoutMs} ms)";
 }

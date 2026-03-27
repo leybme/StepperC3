@@ -11,6 +11,11 @@ void uart_task_start();
 // Write raw bytes to the chain UART (downstream + TMC2209 bus).
 void uart_forward(const uint8_t *data, size_t len);
 
+// Send a response line back upstream toward the PC.
+// Board 0  → USB CDC (Serial)
+// Board N  → Serial0 TX (IO2, UART IN return path)
+void send_upstream(const char *line);
+
 // Mutex that guards Serial1 (chain UART OUT). Take this before temporarily
 // re-assigning Serial1 to TMC pins at runtime; release when restored.
 extern SemaphoreHandle_t g_serial1_mutex;

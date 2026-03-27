@@ -16,6 +16,7 @@
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:NegatedBoolToVisibilityConverter x:Key="NegBoolToVis" />
         <conv:InverseBoolConverter x:Key="InverseBool" />
     </Window.Resources>
 
@@ -84,33 +85,107 @@
                 <GroupBox Header="Add Step" DockPanel.Dock="Top" Margin="4">
                     <StackPanel Margin="4">
                         <TextBlock Text="Step Type:" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ListBox ItemsSource="{Binding AvailableStepTypes}"
+                        <Border x:Name="PaletteDrop"
+                                BorderBrush="OrangeRed" BorderThickness="2" CornerRadius="3"
+                                Visibility="Collapsed" Margin="0,0,0,2" Padding="4,2">
+                            <TextBlock Text="🗑 Drop here to remove" Foreground="OrangeRed"
+                                       FontSize="11" HorizontalAlignment="Center"/>
+                        </Border>
+                        <ListBox x:Name="PaletteListBox"
+                                 ItemsSource="{Binding AvailableStepTypes}"
                                  SelectedItem="{Binding SelectedStepType}"
-                                 Height="200" Margin="0,0,0,8">
-                            <ListBox.GroupStyle>
-                                <GroupStyle>
-                                    <GroupStyle.HeaderTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding Name}" FontWeight="Bold"
-                                                       Foreground="#0078D7" Margin="0,4,0,2" />
-                                        </DataTemplate>
-                                    </GroupStyle.HeaderTemplate>
-                                </GroupStyle>
-                            </ListBox.GroupStyle>
+                                 AllowDrop="True"
+                                 Height="Auto" MaxHeight="420"
+                                 Margin="0,0,0,8"
+                                 Background="#F0F0F0"
+                                 BorderThickness="1"
+                                 HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 PreviewMouseLeftButtonDown="PaletteListBox_PreviewMouseLeftButtonDown"
+                                 DragOver="PaletteListBox_DragOver"
+                                 DragLeave="PaletteListBox_DragLeave"
+                                 Drop="PaletteListBox_Drop">
+
+                            <!-- Same custom item container as task list: white border when selected -->
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin"  Value="0"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Sel"
+                                                        BorderThickness="2" CornerRadius="5"
+                                                        BorderBrush="Transparent"
+                                                        Background="Transparent"
+                                                        Margin="2,1">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Sel" Property="BorderBrush" Value="White"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+
+                            <!-- Micro:bit coloured block with inline Motor ID + primary value -->
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" ToolTip="{Binding Description}">
-                                        <TextBlock Text="{Binding DisplayName}" />
-                                    </StackPanel>
+                                    <Border CornerRadius="4" Padding="6,4"
+                                            Background="{Binding CategoryBrush}">
+                                        <DockPanel LastChildFill="True">
+
+                                            <!-- Drag handle -->
+                                            <TextBlock DockPanel.Dock="Left"
+                                                       Text="⣿" Foreground="White" Opacity="0.55"
+                                                       FontSize="12" VerticalAlignment="Center"
+                                                       Cursor="SizeAll" Margin="0,0,5,0"/>
+
+                                            <!-- Right: Motor ID + primary value fields -->
+                                            <StackPanel DockPanel.Dock="Right"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+
+                                                <!-- Motor ID -->
+                                                <TextBlock Text="M:" Foreground="White" FontSize="10"
+                                                           Opacity="0.85" VerticalAlignment="Center"
+                                                           Margin="0,0,2,0"
+                                                           Visibility="{Binding HasMotorId, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBox Text="{Binding EditMotorId, UpdateSourceTrigger=PropertyChanged}"
+                                                         Width="26" Height="20" FontSize="10" Padding="2,1"
+                                                         Margin="0,0,6,0" VerticalAlignment="Center"
+                                                         Visibility="{Binding HasMotorId, Converter={StaticResource BoolToVis}}"
+                                                         PreviewMouseLeftButtonDown="PaletteField_PreviewMouseLeftButtonDown"/>
+
+                                                <!-- Primary value -->
+                                                <TextBlock Text="{Binding PrimaryValueLabel}" Foreground="White"
+                                                           FontSize="10" Opacity="0.85"
+                                                           VerticalAlignment="Center" Margin="0,0,2,0"
+                                                           Visibility="{Binding HasPrimaryValue, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBlock Text=":" Foreground="White" FontSize="10"
+                                                           VerticalAlignment="Center" Margin="0,0,2,0"
+                                                           Visibility="{Binding HasPrimaryValue, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBox Text="{Binding EditPrimaryValue, UpdateSourceTrigger=PropertyChanged}"
+                                                         Width="52" Height="20" FontSize="10" Padding="2,1"
+                                                         VerticalAlignment="Center"
+                                                         Visibility="{Binding HasPrimaryValue, Converter={StaticResource BoolToVis}}"
+                                                         PreviewMouseLeftButtonDown="PaletteField_PreviewMouseLeftButtonDown"/>
+                                            </StackPanel>
+
+                                            <!-- Step name -->
+                                            <TextBlock Text="{Binding DisplayName}" Foreground="White"
+                                                       FontWeight="SemiBold" FontSize="11"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </DockPanel>
+                                    </Border>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
-
-                        <DockPanel Margin="0,0,0,8">
-                            <TextBlock Text="Motor ID:" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBox Text="{Binding NewStepMotorId, UpdateSourceTrigger=PropertyChanged}"
-                                     Width="50" HorizontalAlignment="Left" />
-                        </DockPanel>
 
                         <Button Command="{Binding AddStepCommand}" Content="➕ Add Step"
                                 Padding="8,4" HorizontalAlignment="Stretch" />
@@ -196,45 +271,145 @@
                          SelectedIndex="{Binding SelectedStepIndex}"
                          AllowDrop="True"
                          x:Name="StepListBox"
+                         Background="#F0F0F0"
+                         BorderThickness="1"
                          PreviewMouseLeftButtonDown="StepListBox_PreviewMouseLeftButtonDown"
                          Drop="StepListBox_Drop"
                          DragOver="StepListBox_DragOver"
+                         DragLeave="StepListBox_DragLeave"
                          HorizontalContentAlignment="Stretch"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+
+                    <!-- Remove default selection highlight; use white border instead -->
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="SelectionBorder"
+                                                BorderThickness="2" CornerRadius="7"
+                                                BorderBrush="Transparent"
+                                                Background="Transparent"
+                                                Margin="2,2">
+                                            <ContentPresenter />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="SelectionBorder"
+                                                        Property="BorderBrush" Value="White"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border Padding="6,4" CornerRadius="3" Margin="1">
+                            <!-- Micro:bit-style coloured block -->
+                            <Border CornerRadius="5" ClipToBounds="True">
                                 <Border.Style>
                                     <Style TargetType="Border">
-                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="Background" Value="{Binding CategoryBrush}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsEnabled}" Value="False">
-                                                <Setter Property="Background" Value="#20FF0000" />
-                                                <Setter Property="Opacity" Value="0.5" />
+                                                <Setter Property="Opacity" Value="0.45"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
-                                <DockPanel>
-                                    <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0"
-                                               FontFamily="Segoe UI Symbol" FontSize="14">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Text" Value="✓" />
-                                                <Setter Property="Foreground" Value="Green" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsEnabled}" Value="False">
-                                                        <Setter Property="Text" Value="✗" />
-                                                        <Setter Property="Foreground" Value="Red" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Type}" Foreground="Gray"
-                                               FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                    <TextBlock Text="{Binding Description}" VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis" />
+
+                                <!-- Single row — description swaps to edit fields in-place -->
+                                <DockPanel Margin="6,5,6,5" LastChildFill="True">
+
+                                    <!-- Drag handle -->
+                                    <TextBlock DockPanel.Dock="Left"
+                                               Text="⣿" Foreground="White" Opacity="0.55"
+                                               FontSize="13" VerticalAlignment="Center"
+                                               Cursor="SizeAll" Margin="0,0,6,0"/>
+
+                                    <!-- Right-side action buttons -->
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+
+                                        <!-- Type label + Edit button (normal mode) -->
+                                        <TextBlock Text="{Binding Type}" Foreground="White"
+                                                   Opacity="0.65" FontSize="10"
+                                                   VerticalAlignment="Center" Margin="0,0,4,0"
+                                                   Visibility="{Binding IsEditing, Converter={StaticResource NegBoolToVis}}"/>
+                                        <Button Content="✏" Width="22" Height="22" Padding="0"
+                                                FontSize="11" Cursor="Hand"
+                                                Background="Transparent" BorderThickness="0"
+                                                Foreground="White"
+                                                Visibility="{Binding IsEditing, Converter={StaticResource NegBoolToVis}}"
+                                                Command="{Binding BeginEditCommand}"/>
+
+                                        <!-- Commit / Cancel (edit mode) -->
+                                        <Button Content="✓" Width="24" Height="22" Padding="0"
+                                                FontSize="13" FontWeight="Bold" Cursor="Hand"
+                                                Background="#3DFFFFFF" BorderThickness="0"
+                                                Foreground="White"
+                                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding CommitEditCommand}"/>
+                                        <Button Content="✗" Width="24" Height="22" Padding="0"
+                                                FontSize="13" Cursor="Hand"
+                                                Background="#3DFFFFFF" BorderThickness="0"
+                                                Foreground="White"
+                                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding CancelEditCommand}"/>
+                                    </StackPanel>
+
+                                    <!-- Normal mode: description text -->
+                                    <TextBlock Text="{Binding Description}" Foreground="White"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontSize="12"
+                                               Visibility="{Binding IsEditing, Converter={StaticResource NegBoolToVis}}"/>
+
+                                    <!-- Edit mode: inline fields (same row, no expand) -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
+
+                                        <!-- Motor ID -->
+                                        <TextBlock Text="Motor:" Foreground="White" FontSize="11"
+                                                   VerticalAlignment="Center" Margin="0,0,3,0"
+                                                   Visibility="{Binding ShowMotorId, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBox Text="{Binding EditMotorId, UpdateSourceTrigger=PropertyChanged}"
+                                                 Width="32" Height="22" FontSize="11" Padding="2,1"
+                                                 Margin="0,0,8,0" VerticalAlignment="Center"
+                                                 Visibility="{Binding ShowMotorId, Converter={StaticResource BoolToVis}}"
+                                                 PreviewKeyDown="EditTextBox_PreviewKeyDown"/>
+
+                                        <!-- Primary value label -->
+                                        <TextBlock Text="{Binding PrimaryValueLabel}" Foreground="White"
+                                                   FontSize="11" VerticalAlignment="Center" Margin="0,0,3,0"
+                                                   Visibility="{Binding HasPrimaryValue, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Text=":" Foreground="White" FontSize="11"
+                                                   VerticalAlignment="Center" Margin="0,0,3,0"
+                                                   Visibility="{Binding HasPrimaryValue, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBox Text="{Binding PrimaryValue, UpdateSourceTrigger=PropertyChanged}"
+                                                 Width="80" Height="22" FontSize="11" Padding="2,1"
+                                                 Margin="0,0,8,0" VerticalAlignment="Center"
+                                                 Visibility="{Binding HasPrimaryValue, Converter={StaticResource BoolToVis}}"
+                                                 PreviewKeyDown="EditTextBox_PreviewKeyDown"/>
+
+                                        <!-- Secondary value (RunCommand args) -->
+                                        <TextBlock Text="{Binding SecondaryValueLabel}" Foreground="White"
+                                                   FontSize="11" VerticalAlignment="Center" Margin="0,0,3,0"
+                                                   Visibility="{Binding HasSecondaryValue, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Text=":" Foreground="White" FontSize="11"
+                                                   VerticalAlignment="Center" Margin="0,0,3,0"
+                                                   Visibility="{Binding HasSecondaryValue, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBox Text="{Binding SecondaryValue, UpdateSourceTrigger=PropertyChanged}"
+                                                 Width="120" Height="22" FontSize="11" Padding="2,1"
+                                                 VerticalAlignment="Center"
+                                                 Visibility="{Binding HasSecondaryValue, Converter={StaticResource BoolToVis}}"
+                                                 PreviewKeyDown="EditTextBox_PreviewKeyDown"/>
+                                    </StackPanel>
+
                                 </DockPanel>
                             </Border>
                         </DataTemplate>

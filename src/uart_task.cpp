@@ -1,5 +1,6 @@
 #include "uart_task.h"
 #include "usb_task.h"
+#include "board_prefs.h"
 #include <board.h>
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
@@ -17,6 +18,7 @@
 
 // ─── uart_forward: write raw bytes downstream via Serial1 ────────────────────
 SemaphoreHandle_t g_serial1_mutex = nullptr;
+static SemaphoreHandle_t s_serial0_mutex = nullptr;
 
 void uart_forward(const uint8_t *data, size_t len)
 {
@@ -25,11 +27,27 @@ void uart_forward(const uint8_t *data, size_t len)
     if (g_serial1_mutex) xSemaphoreGive(g_serial1_mutex);
 }
 
+// ─── send_upstream: relay a response line back toward the PC ────────────────
+void send_upstream(const char *line)
+{
+    if (g_board_id == 0) {
+        // Board 0: upstream IS the PC over USB CDC
+        Serial.print(line);
+    } else {
+        // Other boards: upstream is via Serial0 TX (IO2)
+        if (s_serial0_mutex) xSemaphoreTake(s_serial0_mutex, portMAX_DELAY);
+        Serial0.print(line);
+        if (s_serial0_mutex) xSemaphoreGive(s_serial0_mutex);
+    }
+}
+
 // ─── UART chain task ──────────────────────────────────────────────────────────
 static void uartTask(void *)
 {
     static char lineBuf[256];
     uint16_t    lineIdx  = 0;
+    static char relayBuf[256];   // buffer for IDLE/ERR responses from downstream
+    uint16_t    relayIdx = 0;
     bool        diagState = false;
 
     for (;;)
@@ -53,6 +71,20 @@ static void uartTask(void *)
                 lineBuf[lineIdx] = '\0';
                 process_cmd(lineBuf);   // execute locally or forward downstream
                 lineIdx = 0;
+            }
+        }
+
+        // ── relay IDLE / ERR responses from downstream (Serial1 RX) upstream ─
+        while (Serial1.available())
+        {
+            char c = (char)Serial1.read();
+            if (relayIdx < sizeof(relayBuf) - 1)
+                relayBuf[relayIdx++] = c;
+            if (c == '\n')
+            {
+                relayBuf[relayIdx] = '\0';
+                send_upstream(relayBuf);
+                relayIdx = 0;
             }
         }
 
@@ -86,6 +118,7 @@ void uart_task_start()
     digitalWrite(PIN_DIAG, LOW);
 
     g_serial1_mutex = xSemaphoreCreateMutex();
+    s_serial0_mutex = xSemaphoreCreateMutex();
     xTaskCreate(uartTask, "uart", 4096, nullptr, 2, nullptr);
 }
 
