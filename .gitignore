@@ -8,4 +8,5 @@
 app/**/bin/
 app/**/obj/
 app/StepperC3.App/.vs/StepperC3.App/FileContentIndex/*
-app/StepperC3.App/.vs/StepperC3.App/*
+app/StepperC3.App/.vs/StepperC3.App/
+app/StepperC3.App/.vs/StepperC3.App/v17/*

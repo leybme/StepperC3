@@ -28,6 +28,7 @@ public class MainViewModel : ViewModelBase
             StepFactory.GetAvailableStepTypes().Select(i => new PaletteItemViewModel(i)));
         AvailablePorts = new ObservableCollection<string>(SerialPort.GetPortNames());
         LogMessages = [];
+        MotorStatuses = [];
 
         // Commands
         NewTaskListCommand = new RelayCommand(NewTaskList);
@@ -46,6 +47,9 @@ public class MainViewModel : ViewModelBase
         RunCommand = new RelayCommand(async () => await RunAsync(), () => IsConnected && !IsRunning && Steps.Count > 0);
         StopCommand = new RelayCommand(Stop, () => IsRunning);
         RefreshPortsCommand = new RelayCommand(RefreshPorts);
+        QueryStatusCommand = new RelayCommand(
+            async () => await QueryAllStatusAsync(),
+            () => IsConnected && !IsRunning && !IsQueryingStatus);
     }
 
     // ─── Properties ──────────────────────────────────────────────────────
@@ -54,6 +58,7 @@ public class MainViewModel : ViewModelBase
     public ObservableCollection<PaletteItemViewModel> AvailableStepTypes { get; }
     public ObservableCollection<string> AvailablePorts { get; }
     public ObservableCollection<string> LogMessages { get; }
+    public ObservableCollection<MotorStatusViewModel> MotorStatuses { get; }
 
     public int EnabledStepCount => Steps.Count(s => s.IsEnabled);
 
@@ -134,6 +139,20 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _progressMax, value);
     }
 
+    private int _motorCount = 1;
+    public int MotorCount
+    {
+        get => _motorCount;
+        set => SetProperty(ref _motorCount, Math.Clamp(value, 1, 8));
+    }
+
+    private bool _isQueryingStatus;
+    public bool IsQueryingStatus
+    {
+        get => _isQueryingStatus;
+        set => SetProperty(ref _isQueryingStatus, value);
+    }
+
     private string? _currentFilePath;
     public string? CurrentFilePath
     {
@@ -168,6 +187,7 @@ public class MainViewModel : ViewModelBase
     public ICommand RunCommand { get; }
     public ICommand StopCommand { get; }
     public ICommand RefreshPortsCommand { get; }
+    public ICommand QueryStatusCommand { get; }
 
     // ─── Task List Operations ────────────────────────────────────────────
 
@@ -445,7 +465,55 @@ public class MainViewModel : ViewModelBase
         _cts?.Cancel();
         _runner?.Cancel();
     }
+    // ─── Motor Status Query ──────────────────────────────────────────────────
 
+    private async Task QueryAllStatusAsync()
+    {
+        if (_connection is null || !IsConnected) return;
+        IsQueryingStatus = true;
+        StatusText = "Querying motors...";
+        Log($"Querying {MotorCount} motor(s)...");
+
+        // Sync collection size to MotorCount
+        while (MotorStatuses.Count < MotorCount)
+            MotorStatuses.Add(new MotorStatusViewModel(
+                new MotorStatus { MotorId = MotorStatuses.Count }));
+        while (MotorStatuses.Count > MotorCount)
+            MotorStatuses.RemoveAt(MotorStatuses.Count - 1);
+
+        for (int id = 0; id < MotorCount; id++)
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+                await _connection.SendCommandAsync($"{id} STATUS", cts.Token);
+
+                while (true)
+                {
+                    var line = await _connection.ReadLineAsync(cts.Token);
+                    if (line is null) break;  // serial read timeout
+                    var parsed = MotorStatus.TryParse(line.Trim());
+                    if (parsed?.MotorId == id)
+                    {
+                        MotorStatuses[id].Update(parsed);
+                        Log($"Motor {id}: {parsed.State}  pos={parsed.Position}  {parsed.CurrentMA}mA  {parsed.SpeedHz}Hz");
+                        break;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                Log($"Motor {id}: STATUS timeout");
+            }
+            catch (Exception ex)
+            {
+                Log($"Motor {id}: STATUS error – {ex.Message}");
+            }
+        }
+
+        IsQueryingStatus = false;
+        StatusText = $"Motor status updated ({DateTime.Now:HH:mm:ss})";
+    }
     // ─── Helpers ─────────────────────────────────────────────────────────
 
     private void SyncTaskListFromSteps()

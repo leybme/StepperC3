@@ -57,9 +57,6 @@ static void uartTask(void *)
         {
             char c = (char)Serial0.read();
 
-            // blink DIAG on each received byte
-            diagState = !diagState;
-            digitalWrite(PIN_DIAG, diagState ? HIGH : LOW);
 
             // buffer the byte
             if (lineIdx < sizeof(lineBuf) - 1)
@@ -113,9 +110,6 @@ void uart_task_start()
     Serial1.begin(BAUD_CHAIN, UART_CONFIG, PIN_UART_OUT_RX, PIN_UART_OUT_TX);
     Serial.printf("[uart] UART_OUT Serial1 TX=%d  8E1 parity\r\n", PIN_UART_OUT_TX);
 
-    // DIAG pin — output for blink indicator
-    pinMode(PIN_DIAG, OUTPUT);
-    digitalWrite(PIN_DIAG, LOW);
 
     g_serial1_mutex = xSemaphoreCreateMutex();
     s_serial0_mutex = xSemaphoreCreateMutex();

@@ -43,6 +43,9 @@
                         Foreground="Green" FontWeight="Bold" />
                 <Button Command="{Binding StopCommand}" ToolTip="Stop execution" Content="⏹ Stop"
                         Foreground="Red" />
+                <Separator />
+                <Button Command="{Binding QueryStatusCommand}" Content="📊 Query Motors"
+                        ToolTip="Query STATUS from all configured motors" />
             </ToolBar>
         </ToolBarTray>
 
@@ -222,6 +225,18 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
+                        <Separator Margin="0,6,0,4"/>
+                        <DockPanel>
+                            <TextBlock Text="Motors:" VerticalAlignment="Center" FontWeight="SemiBold"
+                                       Width="50" Margin="0,0,4,0"/>
+                            <Button Content="🔍 Query" DockPanel.Dock="Right"
+                                    Padding="6,3" Margin="4,0,0,0"
+                                    Command="{Binding QueryStatusCommand}"
+                                    ToolTip="Query STATUS from all configured motors"
+                                    IsEnabled="{Binding IsConnected}"/>
+                            <TextBox Text="{Binding MotorCount, UpdateSourceTrigger=PropertyChanged}"
+                                     Height="22" FontSize="11" Padding="2,1"/>
+                        </DockPanel>
                     </StackPanel>
                 </GroupBox>
             </DockPanel>
@@ -441,6 +456,62 @@
                         <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
                                    Foreground="#555" Margin="0,4,0,0" />
                     </StackPanel>
+                </GroupBox>
+
+                <!-- Motor Status -->
+                <GroupBox Header="Motor Status" DockPanel.Dock="Top" Margin="4,4,4,0">
+                    <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding MotorStatuses}" Margin="2">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="5" Margin="0,0,0,4"
+                                            Background="{Binding StateBrush}" Padding="7,5">
+                                        <StackPanel>
+                                            <!-- Header: Motor N  ·  STATE -->
+                                            <DockPanel Margin="0,0,0,4">
+                                                <TextBlock Text="{Binding LastUpdatedText}"
+                                                           DockPanel.Dock="Right"
+                                                           Foreground="White" Opacity="0.6"
+                                                           FontSize="9" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Header}"
+                                                           Foreground="White" FontWeight="Bold" FontSize="12"/>
+                                            </DockPanel>
+                                            <!-- Metrics grid -->
+                                            <UniformGrid Columns="2">
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                                    <TextBlock Text="pos: " Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                    <TextBlock Text="{Binding Position}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                                    <TextBlock Text="tgt: " Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                    <TextBlock Text="{Binding Target}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                                    <TextBlock Text="cur: " Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                    <TextBlock Text="{Binding CurrentMA}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                    <TextBlock Text=" mA" Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                                    <TextBlock Text="spd: " Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                    <TextBlock Text="{Binding SpeedHz}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                    <TextBlock Text=" Hz" Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="1/" Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                    <TextBlock Text="{Binding Microsteps}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                    <TextBlock Text=" step" Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="en: " Foreground="White" Opacity="0.70" FontSize="10"/>
+                                                    <TextBlock Text="{Binding EnabledText}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                                </StackPanel>
+                                            </UniformGrid>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </GroupBox>
 
                 <!-- Log Output -->

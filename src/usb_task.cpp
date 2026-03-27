@@ -181,14 +181,16 @@ void process_cmd(char *line) {
     // ── STATUS ────────────────────────────────────────────────────────────────
     if (strcasecmp(cmd, "STATUS") == 0) {
         MotorStatus st;
-        if (!motor_getStatus(id, st)) { send_err("wrong id"); return; }
-        Serial.printf(
+        if (!motor_getStatus(id, st)) { send_upstream("ERR wrong id\r\n"); return; }
+        char _sbuf[128];
+        snprintf(_sbuf, sizeof(_sbuf),
             "STATUS %d pos=%ld tgt=%ld state=%s en=%d flip=%d"
             " step=%u cur=%umA spd=%luhz accel=%lu\r\n",
             st.id, (long)st.position, (long)st.target, state_str(st.state),
             (int)st.enabled, (int)st.dirFlipped,
             st.microsteps, st.currentMA,
             (unsigned long)st.speedHz, (unsigned long)st.accelHz);
+        send_upstream(_sbuf);
         return;
     }
 
