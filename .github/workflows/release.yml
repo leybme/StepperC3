@@ -127,8 +127,9 @@ jobs:
             ### Quick start — Firmware
 
             1. Connect your ESP32-C3 via USB
-            2. Flash using esptool: `esptool.py --chip esp32c3 write_flash 0x10000 firmware.bin`
-            3. Or use PlatformIO to flash from source
+            2. Flash using PlatformIO from source: `pio run -t upload`
+            3. Or flash the pre-built binary with esptool: `esptool.py --chip esp32c3 write_flash 0x10000 firmware.bin`
+               (address 0x10000 is the default app partition offset for the standard partition table)
 
             See [`app/README.md`](app/README.md) for full documentation.
           files: |
