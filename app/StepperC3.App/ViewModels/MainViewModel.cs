@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.IO.IsolatedStorage;
 using System.IO.Ports;
 using System.Windows;
 using System.Windows.Input;
@@ -29,6 +30,11 @@ public class MainViewModel : ViewModelBase
         AvailablePorts = new ObservableCollection<string>(SerialPort.GetPortNames());
         LogMessages = [];
         MotorStatuses = [];
+
+        // Restore last COM port if still available
+        var lastPort = LoadLastPort();
+        if (lastPort is not null && AvailablePorts.Contains(lastPort))
+            _selectedPort = lastPort;
 
         // Commands
         NewTaskListCommand = new RelayCommand(NewTaskList);
@@ -379,6 +385,31 @@ public class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(EnabledStepCount));
     }
 
+    private const string PrefsFile = "StepperC3.prefs";
+
+    private static string? LoadLastPort()
+    {
+        try
+        {
+            using var store = IsolatedStorageFile.GetUserStoreForAssembly();
+            if (!store.FileExists(PrefsFile)) return null;
+            using var reader = new StreamReader(new IsolatedStorageFileStream(PrefsFile, FileMode.Open, store));
+            return reader.ReadLine()?.Trim();
+        }
+        catch { return null; }
+    }
+
+    private static void SaveLastPort(string port)
+    {
+        try
+        {
+            using var store = IsolatedStorageFile.GetUserStoreForAssembly();
+            using var writer = new StreamWriter(new IsolatedStorageFileStream(PrefsFile, FileMode.Create, store));
+            writer.WriteLine(port);
+        }
+        catch { /* best-effort */ }
+    }
+
     // ─── Connection ──────────────────────────────────────────────────────
 
     private void Connect()
@@ -390,6 +421,7 @@ public class MainViewModel : ViewModelBase
             _connection = new MotorChainConnection(SelectedPort);
             _connection.Connect();
             IsConnected = true;
+            SaveLastPort(SelectedPort);
             StatusText = $"Connected to {SelectedPort}";
             Log($"Connected to {SelectedPort}");
         }
