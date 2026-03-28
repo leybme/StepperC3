@@ -44,6 +44,9 @@ public class MainViewModel : ViewModelBase
         ClearStepsCommand = new RelayCommand(ClearSteps, () => Steps.Count > 0);
         ConnectCommand = new RelayCommand(Connect, () => !IsConnected && !string.IsNullOrEmpty(SelectedPort));
         DisconnectCommand = new RelayCommand(Disconnect, () => IsConnected);
+        ConnectToggleCommand = new RelayCommand(
+            () => { if (IsConnected) Disconnect(); else Connect(); },
+            () => IsConnected || !string.IsNullOrEmpty(SelectedPort));
         RunCommand = new RelayCommand(async () => await RunAsync(), () => IsConnected && !IsRunning && Steps.Count > 0);
         StopCommand = new RelayCommand(Stop, () => IsRunning);
         RefreshPortsCommand = new RelayCommand(RefreshPorts);
@@ -108,7 +111,11 @@ public class MainViewModel : ViewModelBase
     public bool IsConnected
     {
         get => _isConnected;
-        set => SetProperty(ref _isConnected, value);
+        set
+        {
+            SetProperty(ref _isConnected, value);
+            OnPropertyChanged(nameof(ConnectToggleLabel));
+        }
     }
 
     private bool _isRunning;
@@ -184,6 +191,8 @@ public class MainViewModel : ViewModelBase
     public ICommand ClearStepsCommand { get; }
     public ICommand ConnectCommand { get; }
     public ICommand DisconnectCommand { get; }
+    public ICommand ConnectToggleCommand { get; }
+    public string ConnectToggleLabel => IsConnected ? "🔓 Disconnect" : "🔌 Connect";
     public ICommand RunCommand { get; }
     public ICommand StopCommand { get; }
     public ICommand RefreshPortsCommand { get; }
@@ -483,12 +492,13 @@ public class MainViewModel : ViewModelBase
     {
         if (_connection is null || !IsConnected) return;
         IsQueryingStatus = true;
-        StatusText = "Auto-detecting motors...";
-        Log("Auto-detecting connected motors (probing 0–7)...");
+        bool isFullScan = MotorCount == 8;
+        StatusText = isFullScan ? "Auto-detecting motors..." : $"Querying {MotorCount} motor(s)...";
+        Log(isFullScan ? "Auto-detecting connected motors (probing 0–7)..." : $"Querying {MotorCount} motor(s)...");
 
         int detectedCount = 0;
 
-        for (int id = 0; id < 8; id++)
+        for (int id = 0; id < MotorCount; id++)
         {
             // Ensure slot exists for this id
             while (MotorStatuses.Count <= id)

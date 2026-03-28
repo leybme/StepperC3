@@ -52,8 +52,7 @@
                           IsEnabled="{Binding IsConnected, Converter={StaticResource InverseBool}}" />
                 <Button Content="🔄" Command="{Binding RefreshPortsCommand}" ToolTip="Refresh ports" Padding="4,2"/>
                 <Separator />
-                <Button Content="🔌 Connect" Command="{Binding ConnectCommand}" Padding="8,4"/>
-                <Button Content="🔓 Disconnect" Command="{Binding DisconnectCommand}" Padding="8,4"/>
+                <Button Content="{Binding ConnectToggleLabel}" Command="{Binding ConnectToggleCommand}" Padding="8,4"/>
                 <TextBlock Margin="8,0,0,0" VerticalAlignment="Center">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
