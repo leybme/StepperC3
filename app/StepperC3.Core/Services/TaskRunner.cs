@@ -27,6 +27,9 @@ public class TaskRunner
     /// <summary>Raised after each step is executed.</summary>
     public event EventHandler<StepExecutedEventArgs>? StepExecuted;
 
+    /// <summary>Raised when a QueryStatus step receives a STATUS response.</summary>
+    public event EventHandler<MotorStatus>? StatusReceived;
+
     /// <summary>Whether the runner is currently executing a task list.</summary>
     public bool IsRunning { get; private set; }
 
@@ -129,6 +132,10 @@ public class TaskRunner
                 await WaitForMotorIdleAsync(waitIdle, ct);
                 break;
 
+            case QueryStatusStep queryStatus:
+                await QueryMotorStatusAsync(queryStatus, ct);
+                break;
+
             case RunCommandStep runCmd:
                 await RunExternalCommandAsync(runCmd, ct);
                 break;
@@ -141,6 +148,28 @@ public class TaskRunner
                     await _connection.SendCommandAsync(command, ct);
                 }
                 break;
+        }
+    }
+
+    private async Task QueryMotorStatusAsync(QueryStatusStep step, CancellationToken ct)
+    {
+        var id = step.MotorId ?? 0;
+        await _connection.SendCommandAsync($"{id} STATUS", ct);
+        var prefix = $"STATUS {id}";
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(4000);
+
+        while (true)
+        {
+            var line = await _connection.ReadLineAsync(timeoutCts.Token);
+            if (line is null) continue;
+            var parsed = MotorStatus.TryParse(line.Trim());
+            if (parsed?.MotorId == id)
+            {
+                StatusReceived?.Invoke(this, parsed);
+                return;
+            }
         }
     }
 

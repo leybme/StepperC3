@@ -50,12 +50,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 static void send_ok(const char *cmd, int id = -1) {
-    if (id >= 0) Serial.printf("OK %s %d\r\n", cmd, id);
-    else         Serial.printf("OK %s\r\n", cmd);
+    char _buf[64];
+    if (id >= 0) snprintf(_buf, sizeof(_buf), "OK %s %d\r\n", cmd, id);
+    else         snprintf(_buf, sizeof(_buf), "OK %s\r\n", cmd);
+    send_upstream(_buf);
 }
 
 static void send_err(const char *reason) {
-    Serial.printf("ERR %s\r\n", reason);
+    char _buf[96];
+    snprintf(_buf, sizeof(_buf), "ERR %s\r\n", reason);
+    send_upstream(_buf);
 }
 
 // ─── CHECKIDLE support ────────────────────────────────────────────────────────────────

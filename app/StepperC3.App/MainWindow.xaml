@@ -76,11 +76,11 @@
         <!-- ═══ Main Content ═══ -->
         <Grid>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250" MinWidth="200" />
+                <ColumnDefinition Width="300" MinWidth="200" />
                 <ColumnDefinition Width="5" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="5" />
-                <ColumnDefinition Width="280" MinWidth="220" />
+                <ColumnDefinition Width="300" MinWidth="220" />
             </Grid.ColumnDefinitions>
 
             <!-- ═══ Left Panel: Step Palette & Add ═══ -->

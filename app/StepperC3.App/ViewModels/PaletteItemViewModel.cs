@@ -67,7 +67,7 @@ public class PaletteItemViewModel : ViewModelBase
         StepType.MoveTo  or StepType.MoveBy or StepType.GoHome
             or StepType.FindHome or StepType.Stop =>
             new SolidColorBrush(Color.FromRgb(0x00, 0x78, 0xD4)),  // blue – motion
-        StepType.Wait or StepType.WaitForIdle or StepType.ResetTask =>
+        StepType.Wait or StepType.WaitForIdle or StepType.ResetTask or StepType.QueryStatus =>
             new SolidColorBrush(Color.FromRgb(0xFF, 0x8C, 0x00)),  // orange – timing/flow
         StepType.SetSpeed or StepType.SetAcceleration or StepType.SetCurrent
             or StepType.SetMicrostep or StepType.FlipDirection or StepType.SetPosition =>

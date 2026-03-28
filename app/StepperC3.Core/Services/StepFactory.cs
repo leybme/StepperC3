@@ -32,6 +32,7 @@ public static class StepFactory
             StepType.SetPosition => new SetPositionStep { MotorId = motorId, Position = 0 },
             StepType.WaitForIdle => new WaitForIdleStep { MotorId = motorId },
             StepType.ResetTask => new ResetTaskStep(),
+            StepType.QueryStatus => new QueryStatusStep { MotorId = motorId },
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, "Unknown step type.")
         };
     }
@@ -43,6 +44,7 @@ public static class StepFactory
     [
         new(StepType.Wait,            "Wait",             "Pause for specified duration",            "Flow Control"),
         new(StepType.WaitForIdle,     "Wait Idle",        "Wait until motor reaches idle state",    "Flow Control"),
+        new(StepType.QueryStatus,     "Query Status",     "Read motor status into status panel",    "Flow Control"),
         new(StepType.ResetTask,       "Reset Task",       "Restart task list from the first step",  "Flow Control"),
         new(StepType.RunCommand,      "Run Command",      "Execute an external command or script",  "Flow Control"),
         new(StepType.MoveTo,          "Move To",          "Move motor to absolute position",        "Motion"),

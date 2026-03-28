@@ -54,5 +54,8 @@ public enum StepType
     WaitForIdle,
 
     /// <summary>Restart the task list from the first step.</summary>
-    ResetTask
+    ResetTask,
+
+    /// <summary>Query motor STATUS and refresh the status panel.</summary>
+    QueryStatus
 }

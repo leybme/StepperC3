@@ -23,6 +23,7 @@ namespace StepperC3.Core.Models;
 [JsonDerivedType(typeof(SetPositionStep), "SetPosition")]
 [JsonDerivedType(typeof(WaitForIdleStep), "WaitForIdle")]
 [JsonDerivedType(typeof(ResetTaskStep), "ResetTask")]
+[JsonDerivedType(typeof(QueryStatusStep), "QueryStatus")]
 public abstract class AutomationStep
 {
     /// <summary>Unique identifier for this step.</summary>
@@ -214,4 +215,13 @@ public class WaitForIdleStep : AutomationStep
 
     public override string ToCommand() => $"{MotorId ?? 0} CHECKIDLE {TimeoutMs}";
     public override string GetDescription() => $"Wait Motor {MotorId} idle (timeout {TimeoutMs} ms)";
+}
+
+/// <summary>Query motor STATUS and refresh the live status panel.</summary>
+public class QueryStatusStep : AutomationStep
+{
+    public override StepType Type => StepType.QueryStatus;
+
+    public override string ToCommand() => $"{MotorId ?? 0} STATUS";
+    public override string GetDescription() => $"Query status of Motor {MotorId ?? 0}";
 }

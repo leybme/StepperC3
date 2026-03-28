@@ -151,6 +151,7 @@ static void motorTask(void *)
 void motor_ctrl_init()
 {
     motor_prefs_load();
+    s_status.id = g_board_id; // sync after prefs load (g_board_id set by SETID+NVS)
 
     // ── Configure TMC2209 via UART (borrow Serial1 on TMC pins) ──────────────
     // Serial1 is free here — uart_task_start() has not been called yet.
@@ -215,7 +216,7 @@ void motor_ctrl_init()
 }
 
 // ─── Identity ────────────────────────────────────────────────────────────────
-void motor_setID(uint8_t newID) { g_board_id = newID & 0x07; }
+void motor_setID(uint8_t newID) { g_board_id = newID & 0x07; s_status.id = g_board_id; }
 uint8_t motor_getID() { return g_board_id; }
 
 // ─── Motion ──────────────────────────────────────────────────────────────────
