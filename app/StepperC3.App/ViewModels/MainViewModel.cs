@@ -139,7 +139,7 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _progressMax, value);
     }
 
-    private int _motorCount = 1;
+    private int _motorCount = 8;
     public int MotorCount
     {
         get => _motorCount;
@@ -435,6 +435,18 @@ public class MainViewModel : ViewModelBase
             });
         };
 
+        _runner.StatusReceived += (_, st) =>
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                while (MotorStatuses.Count <= st.MotorId)
+                    MotorStatuses.Add(new MotorStatusViewModel(
+                        new MotorStatus { MotorId = MotorStatuses.Count }));
+                MotorStatuses[st.MotorId].Update(st);
+                Log($"  [QueryStatus] Motor {st.MotorId}: {st.State}  pos={st.Position}  {st.CurrentMA}mA  {st.SpeedHz}Hz");
+            });
+        };
+
         try
         {
             await _runner.RunAsync(_taskList, _cts.Token);
@@ -471,48 +483,68 @@ public class MainViewModel : ViewModelBase
     {
         if (_connection is null || !IsConnected) return;
         IsQueryingStatus = true;
-        StatusText = "Querying motors...";
-        Log($"Querying {MotorCount} motor(s)...");
+        StatusText = "Auto-detecting motors...";
+        Log("Auto-detecting connected motors (probing 0–7)...");
 
-        // Sync collection size to MotorCount
-        while (MotorStatuses.Count < MotorCount)
-            MotorStatuses.Add(new MotorStatusViewModel(
-                new MotorStatus { MotorId = MotorStatuses.Count }));
-        while (MotorStatuses.Count > MotorCount)
-            MotorStatuses.RemoveAt(MotorStatuses.Count - 1);
+        int detectedCount = 0;
 
-        for (int id = 0; id < MotorCount; id++)
+        for (int id = 0; id < 8; id++)
         {
+            // Ensure slot exists for this id
+            while (MotorStatuses.Count <= id)
+                MotorStatuses.Add(new MotorStatusViewModel(
+                    new MotorStatus { MotorId = MotorStatuses.Count }));
+
+            bool responded = false;
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 await _connection.SendCommandAsync($"{id} STATUS", cts.Token);
 
                 while (true)
                 {
                     var line = await _connection.ReadLineAsync(cts.Token);
-                    if (line is null) break;  // serial read timeout
+                    if (line is null) break;
                     var parsed = MotorStatus.TryParse(line.Trim());
                     if (parsed?.MotorId == id)
                     {
                         MotorStatuses[id].Update(parsed);
-                        Log($"Motor {id}: {parsed.State}  pos={parsed.Position}  {parsed.CurrentMA}mA  {parsed.SpeedHz}Hz");
+                        Log($"  Motor {id}: {parsed.State}  pos={parsed.Position}  {parsed.CurrentMA}mA  {parsed.SpeedHz}Hz");
+                        responded = true;
                         break;
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                Log($"Motor {id}: STATUS timeout");
+                Log($"  Motor {id}: no response — stopping scan");
             }
             catch (Exception ex)
             {
-                Log($"Motor {id}: STATUS error – {ex.Message}");
+                Log($"  Motor {id}: error — {ex.Message}");
             }
+
+            if (!responded)
+                break;   // chain ends here; boards beyond won't respond either
+
+            detectedCount++;
         }
 
+        // Update MotorCount to match what actually responded
+        if (detectedCount != MotorCount)
+        {
+            Log($"Detected {detectedCount} motor(s) — MotorCount updated from {MotorCount} to {detectedCount}");
+            MotorCount = detectedCount;
+        }
+
+        // Trim status cards to only the detected motors
+        while (MotorStatuses.Count > detectedCount)
+            MotorStatuses.RemoveAt(MotorStatuses.Count - 1);
+
         IsQueryingStatus = false;
-        StatusText = $"Motor status updated ({DateTime.Now:HH:mm:ss})";
+        StatusText = detectedCount > 0
+            ? $"{detectedCount} motor(s) detected ({DateTime.Now:HH:mm:ss})"
+            : $"No motors responded ({DateTime.Now:HH:mm:ss})";
     }
     // ─── Helpers ─────────────────────────────────────────────────────────
 
