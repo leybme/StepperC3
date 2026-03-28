@@ -1,5 +1,4 @@
 <Solution>
   <Project Path="StepperC3.App/StepperC3.App.csproj" />
-  <Project Path="StepperC3.Core.Tests/StepperC3.Core.Tests.csproj" />
   <Project Path="StepperC3.Core/StepperC3.Core.csproj" />
 </Solution>

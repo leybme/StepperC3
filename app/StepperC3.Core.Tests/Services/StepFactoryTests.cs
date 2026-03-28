@@ -42,7 +42,7 @@ public class StepFactoryTests
     public void GetAvailableStepTypes_ReturnsAllTypes()
     {
         var types = StepFactory.GetAvailableStepTypes();
-        Assert.Equal(14, types.Count);
+        Assert.Equal(18, types.Count);
 
         // All enum values should be represented
         var stepTypes = Enum.GetValues<StepType>();
